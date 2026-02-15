@@ -1,0 +1,92 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                Int      @id @default(autoincrement())
+  name              String
+  email             String   @unique
+  password          String
+  preferredLanguage String   @default("en") @map("preferred_language")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  signDetections    SignDetection[]
+  voiceTranscripts  VoiceTranscript[]
+  textMessages      TextMessage[]
+  userPreferences   UserPreference?
+  userSessions      UserSession[]
+
+  @@map("users")
+}
+
+model UserSession {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  token     String
+  createdAt DateTime @default(now()) @map("created_at")
+  expiresAt DateTime @map("expires_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_sessions")
+}
+
+model SignDetection {
+  id           Int      @id @default(autoincrement())
+  userId       Int      @map("user_id")
+  detectedSign String   @map("detected_sign")
+  confidence   Float?
+  language     String   @default("en")
+  framePath    String?  @map("frame_path")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sign_detections")
+}
+
+model VoiceTranscript {
+  id              Int      @id @default(autoincrement())
+  userId          Int      @map("user_id")
+  transcript      String
+  language        String   @default("en")
+  durationSeconds Int?     @map("duration_seconds")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("voice_transcripts")
+}
+
+model TextMessage {
+  id          Int      @id @default(autoincrement())
+  userId      Int      @map("user_id")
+  messageText String   @map("message_text")
+  language    String   @default("en")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("text_messages")
+}
+
+model UserPreference {
+  id                    Int      @id @default(autoincrement())
+  userId                Int      @unique @map("user_id")
+  preferredInputMode    String?  @map("preferred_input_mode")
+  accessibilitySettings String?  @map("accessibility_settings")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_preferences")
+}
