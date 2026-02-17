@@ -4,6 +4,7 @@ import axios from "axios";
 import FormData from "form-data";
 import fs from "fs";
 import path from "path";
+import { config } from "../config/env";
 
 const router = express.Router();
 
@@ -19,8 +20,6 @@ router.post("/", upload.single("image"), async (req, res): Promise<void> => {
 
     // DEBUG: Log request
     try {
-        const fs = require('fs');
-        const path = require('path');
         fs.appendFileSync(path.join(process.cwd(), 'debug_log.txt'), `[${new Date().toISOString()}] Request received. File: ${imagePath}\n`);
     } catch (e) { console.error(e); }
 
@@ -28,7 +27,8 @@ router.post("/", upload.single("image"), async (req, res): Promise<void> => {
         const formData = new FormData();
         formData.append('image', fs.createReadStream(imagePath));
 
-        const response = await axios.post('http://localhost:5001/predict', formData, {
+        const pythonUrl = config.pythonServiceUrl;
+        const response = await axios.post(`${pythonUrl}/predict`, formData, {
             headers: {
                 ...formData.getHeaders()
             }
@@ -49,10 +49,25 @@ router.post("/", upload.single("image"), async (req, res): Promise<void> => {
         } catch (e) { console.error(e); }
 
         if (error.response) {
-            console.error('Status:', error.response.status);
-            console.error('Data:', error.response.data);
+            console.error('Prediction Service Response Error Status:', error.response.status);
+            console.error('Prediction Service Response Error Data:', error.response.data);
+            res.status(error.response.status).json({
+                error: "Prediction service returned an error",
+                details: error.response.data
+            });
+        } else {
+            console.error('Prediction Service Network/Internal Error:', error.message);
+            res.status(500).json({ error: "Prediction service is unreachable or internal error occurred" });
         }
-        res.status(500).json({ error: "Prediction service failed" });
+    } finally {
+        // Clean up uploaded file
+        try {
+            if (fs.existsSync(imagePath)) {
+                fs.unlinkSync(imagePath);
+            }
+        } catch (cleanupError) {
+            console.error('Failed to cleanup uploaded file:', cleanupError);
+        }
     }
 });
 

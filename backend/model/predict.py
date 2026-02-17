@@ -20,12 +20,20 @@ with open(INDICES_PATH) as f:
 
 index_to_label = {v:k for k,v in class_indices.items()}
 
-img = cv2.imread(sys.argv[1], cv2.IMREAD_GRAYSCALE)
-img = cv2.resize(img, (IMG_SIZE, IMG_SIZE))
-img = img / 255.0
-img = img.reshape(1, IMG_SIZE, IMG_SIZE, 1)
+img = cv2.imread(sys.argv[1])
+if img is None:
+    print("Error: Could not read image")
+    sys.exit(1)
 
-pred = model.predict(img)[0]
+gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+thresh = cv2.adaptiveThreshold(blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 11, 2)
+
+img_resized = cv2.resize(thresh, (IMG_SIZE, IMG_SIZE))
+img_normalized = img_resized / 255.0
+img_reshaped = img_normalized.reshape(1, IMG_SIZE, IMG_SIZE, 1)
+
+pred = model.predict(img_reshaped)[0]
 idx = int(np.argmax(pred))
 
 print("Prediction:", index_to_label[idx])
