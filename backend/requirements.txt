@@ -1,4 +1,8 @@
-Flask
+FastAPI
+uvicorn
+mediapipe
 tensorflow-cpu
 numpy
 opencv-python-headless
+scikit-learn
+python-multipart
