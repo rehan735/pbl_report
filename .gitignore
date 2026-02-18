@@ -29,6 +29,14 @@ frontend/dist/
 debug_log.txt
 backend/debug_log.txt
 
+# Uploads (temp files)
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# Debug artifacts
+backend/model/debug_*.jpg
+backend/test_image.png
+
 # OS
 .DS_Store
 Thumbs.db
