@@ -5,6 +5,7 @@ frontend/node_modules/
 
 # Python
 backend/venv/
+backend/model/venv/
 backend/__pycache__/
 *.py[cod]
 *$py.class
@@ -40,3 +41,8 @@ backend/test_image.png
 # OS
 .DS_Store
 Thumbs.db
+
+# Large Data & Models
+backend/model/*.npy
+backend/model/*.h5
+backend/model/*.keras

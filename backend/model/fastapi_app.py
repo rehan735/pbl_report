@@ -6,13 +6,14 @@ import numpy as np
 import json
 import os
 import logging
-from typing import List, Optional
+from typing import List
+from preprocess import preprocess_sequence
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Sign Language Prediction Service")
+app = FastAPI(title="Sign Language Sequence Prediction Service v2")
 
 # CORS middleware
 app.add_middleware(
@@ -25,34 +26,41 @@ app.add_middleware(
 
 # Constants
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-MODEL_PATH = os.path.join(BASE_DIR, 'landmark_model.h5')
-LABELS_PATH = os.path.join(BASE_DIR, 'class_indices.json')
-CONFIDENCE_THRESHOLD = 0.85
-WINDOW_SIZE = 5
+MODEL_PATH = os.path.join(BASE_DIR, 'word_lstm_model.keras')
+LABELS_PATH = os.path.join(BASE_DIR, 'word_classes_indices.json')
+CONFIDENCE_THRESHOLD = 0.60 # Lowered for real-world detection
+SEQUENCE_LENGTH = 30
+FEATURES = 126
+WINDOW_SIZE = 2 
 
 # Global state for temporal smoothing
 prediction_history = []
 model = None
 index_to_label = {}
 
-class LandmarkInput(BaseModel):
-    landmarks: List[float] # List of 126 floats (2 hands * 21 points * 3 coordinates)
+class SequenceInput(BaseModel):
+    # Expect a list of 30 frames, where each frame is a list of 126 float landmarks
+    frames: List[List[float]] 
 
 @app.on_event("startup")
 def load_resources():
     global model, index_to_label
     try:
+        logger.info("Initializing TensorFlow and loading models...")
         if os.path.exists(MODEL_PATH):
             model = tf.keras.models.load_model(MODEL_PATH)
-            logger.info(f"Model loaded from {MODEL_PATH}")
+            logger.info(f"LSTM Sequence Model loaded from {MODEL_PATH}")
         else:
-            logger.warning(f"Model file not found at {MODEL_PATH}. Prediction will fail until model is trained.")
+            logger.warning(f"Model file not found at {MODEL_PATH}. Prediction will fail.")
             
         if os.path.exists(LABELS_PATH):
             with open(LABELS_PATH, 'r') as f:
                 class_indices = json.load(f)
-            index_to_label = {v: k for k, v in class_indices.items()}
-            logger.info("Class indices loaded.")
+            # JSON keys are often strings, convert to int for mapping
+            index_to_label = {int(k): v for k, v in class_indices.items()}
+            logger.info(f"Class indices loaded. Found {len(index_to_label)} classes.")
+        
+        logger.info("Sign Language Prediction Service is READY at http://0.0.0.0:5001")
     except Exception as e:
         logger.error(f"Error loading resources: {e}")
 
@@ -61,30 +69,38 @@ def health():
     return {
         "status": "online",
         "model_loaded": model is not None,
-        "labels_loaded": len(index_to_label) > 0
+        "labels_loaded": len(index_to_label) > 0,
+        "classes": index_to_label
     }
 
 @app.post("/predict")
-async def predict(input_data: LandmarkInput):
+async def predict(input_data: SequenceInput):
     global prediction_history
     
     if model is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
     
     try:
-        # Landmarks should be a list of 126 floats
-        landmarks_list = input_data.landmarks
-        if len(landmarks_list) != 126:
-            # Handle cases where frontend might still be sending 63
-            if len(landmarks_list) == 63:
-                landmarks_list = landmarks_list + [0.0] * 63
-            else:
-                raise HTTPException(status_code=400, detail=f"Expected 126 landmarks, got {len(landmarks_list)}")
+        frames = input_data.frames
+        if len(frames) != SEQUENCE_LENGTH:
+            raise HTTPException(status_code=400, detail=f"Expected sequence of {SEQUENCE_LENGTH} frames, got {len(frames)}")
+            
+        # Validate each frame has 126 features
+        for frame in frames:
+            if len(frame) != 126:
+                raise HTTPException(status_code=400, detail=f"Each frame must have 126 landmarks.")
 
-        landmarks = np.array(landmarks_list).reshape(1, 126)
+        # Convert to numpy array of shape (30, 126)
+        raw_sequence = np.array(frames)
         
-        predictions = model.predict(landmarks, verbose=0)[0]
-        idx = np.argmax(predictions)
+        # Preprocess to (30, 126) -> Wrist normalization ONLY (No velocity for Word LSTM)
+        processed_sequence = preprocess_sequence(raw_sequence, use_velocity=False)
+        
+        # Reshape for LSTM model input: (1, 30, 126)
+        model_input = processed_sequence.reshape(1, SEQUENCE_LENGTH, FEATURES)
+        
+        predictions = model.predict(model_input, verbose=0)[0]
+        idx = int(np.argmax(predictions))
         confidence = float(predictions[idx])
         label = index_to_label.get(idx, "Unknown")
         
@@ -94,7 +110,7 @@ async def predict(input_data: LandmarkInput):
         else:
             prediction_result = label
             
-        # Temporal Smoothing (Rolling Window + Majority Voting)
+        # Temporal Smoothing over recent sequence predictions
         prediction_history.append(prediction_result)
         if len(prediction_history) > WINDOW_SIZE:
             prediction_history.pop(0)
